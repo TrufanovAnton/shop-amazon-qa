@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# Playwright output
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+cookies.json
+auth.json
+storageState.json
+*.har
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Assignment brief from the employer — not ours to republish
+ShopTest_Senior_QA_Web.docx
