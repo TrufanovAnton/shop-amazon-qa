@@ -133,7 +133,7 @@ All six tiles are cosmetics: Amazon Basics makeup blender sponges and foam wedge
 
 Zero category overlap suggests the widget picks a wrong seed item, not a ranking issue. Filed for that reason.
 
-**Attachments:** user screenshots, both orientations
+**Attachments:** `BUG-005_compare-widget-portrait.png`, `BUG-005_compare-widget-landscape.png`
 
 ---
 
