@@ -1,14 +1,6 @@
 import { Page, Locator, expect } from '@playwright/test';
 
-/**
- * Shared behaviour: navigation, anti-bot detection, popup dismissal.
- *
- * Amazon-specific reality (verified on live DOM):
- *  - no data-testid attributes; stable hooks are semantic IDs, ARIA roles,
- *    data-component-type / data-asin / data-cy attributes;
- *  - random interstitials: CAPTCHA "dog page", delivery-location popover,
- *    "continue shopping" bot-check button.
- */
+/** Shared behaviour: navigation, bot-wall detection, popup dismissal. */
 export abstract class BasePage {
   protected constructor(protected readonly page: Page) {}
 
@@ -21,12 +13,39 @@ export abstract class BasePage {
     await this.page.goto(path, { waitUntil: 'domcontentloaded' });
     await this.failFastOnBotWall();
     await this.dismissInterstitials();
+    await this.ensureUsDeliveryLocation();
   }
 
-  /**
-   * Fail with an explicit, actionable message instead of a cryptic
-   * locator timeout when Amazon serves the CAPTCHA wall.
-   */
+  // Set a US ZIP once per context: non-US IP locations get degraded buy boxes.
+  // Best-effort, tests continue on the IP location if the modal is not served.
+  protected async ensureUsDeliveryLocation(zip = '10001'): Promise<void> {
+    const ctx = this.page.context() as unknown as { __usZipSet?: boolean };
+    if (ctx.__usZipSet) return;
+    try {
+      const glow = this.page.locator('#nav-global-location-popover-link');
+      const label = (await glow.textContent().catch(() => '')) ?? '';
+      if (new RegExp(`\\b${zip}\\b`).test(label)) { ctx.__usZipSet = true; return; }
+      await glow.click({ timeout: 5_000 });
+      const input = this.page.locator('#GLUXZipUpdateInput');
+      await input.waitFor({ state: 'visible', timeout: 10_000 });
+      await input.fill(zip);
+      await this.page
+        .locator('#GLUXZipUpdate input[type="submit"], input[aria-labelledby="GLUXZipUpdate-announce"]')
+        .first()
+        .click();
+      const done = this.page
+        .locator('#GLUXConfirmClose, button[name="glowDoneButton"]')
+        .or(this.page.getByRole('button', { name: /done|continue/i }))
+        .first();
+      await done.click({ timeout: 5_000 }).catch(() => {});
+      await this.page.reload({ waitUntil: 'domcontentloaded' });
+      ctx.__usZipSet = true;
+    } catch {
+      // continue with IP-based location; downstream code handles fallbacks
+    }
+  }
+
+  /** Explicit error instead of a cryptic timeout when the CAPTCHA wall appears. */
   protected async failFastOnBotWall(): Promise<void> {
     const captcha = this.page.locator('form[action*="validateCaptcha"]');
     if (await captcha.isVisible().catch(() => false)) {

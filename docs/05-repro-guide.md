@@ -2,7 +2,7 @@
 
 Рабочая шпаргалка. Держите открытой рядом с браузером. Всё воспроизводилось 2026-08-04 в Chrome на macOS, залогиненная сессия, delivery location = Israel.
 
-**Общая предпосылка ко всем трём:** локация доставки аккаунта — **не США**. Это ключевой триггер для BUG-002 и BUG-003. Если смените её на US ZIP — BUG-002 и BUG-003, скорее всего, пропадут. BUG-001 от локации не зависит.
+**Общая предпосылка:** локация доставки аккаунта — **не США**. Это ключевой триггер для BUG-002 и BUG-004. Смените её на US ZIP — и они, скорее всего, пропадут. BUG-001 от локации не зависит.
 
 ---
 
@@ -133,73 +133,6 @@ JSON.stringify({
 ### Заодно зафиксируйте
 
 В выдаче по «wireless mouse» с фильтром Logitech присутствует *Logitech **Wired** Mouse M90*. Это дефект релевантности — упомяните как наблюдение, но не как отдельный баг: ranking quality вынесен в out of scope.
-
----
-
-## BUG-003 · Два разных адреса доставки на одной странице
-
-**Ожидаемое время: 5–15 мин. Воспроизводимость: 1/3 — самый капризный.**
-
-### Что нужно поймать
-
-В одном кадре одновременно:
-
-- шапка (`#glow-ingress-block`): **«Delivering to Nashville 37217»**
-- баннер под шапкой: **«We're showing you items that ship to Israel…»**
-
-### Условия, при которых у меня это выпало
-
-Это был **самый первый** переход на SERP в свежей сессии. При последующих навигациях шапка везде показывала «Deliver to Israel», и противоречие исчезло.
-
-### Как пробовать
-
-1. Полностью очистите cookies для amazon.com (DevTools → Application → Storage → Clear site data).
-2. Залогиньтесь заново.
-3. **Сразу**, не заходя на главную и никуда больше, откройте `https://www.amazon.com/s?k=wireless+mouse&s=price-asc-rank`.
-4. В первые же секунды сравните шапку и баннер:
-
-```js
-JSON.stringify({
-  glowHeader: document.querySelector('#glow-ingress-block')?.innerText?.replace(/\s+/g,' ').trim(),
-  banner: [...document.querySelectorAll('div,span')]
-    .map(e => e.innerText)
-    .find(t => t && /ship to/i.test(t) && t.length < 250)?.replace(/\s+/g,' ').trim()
-}, null, 1)
-```
-
-5. Если строки называют **разные** места назначения — немедленно скриншот всего окна.
-6. Повторите цикл 3–5 раз. Если поймаете 2 раза из 5 — поднимайте severity до **High** и правьте раздел «Reproduction rate» в репорте.
-
-### Проверка серверного состояния (для technical notes)
-
-```js
-async function glowOf(url){
-  const html = await (await fetch(url)).text();
-  return new DOMParser().parseFromString(html,'text/html')
-    .querySelector('#glow-ingress-block')?.textContent?.replace(/\s+/g,' ').trim();
-}
-JSON.stringify({
-  home: await glowOf('/'),
-  serp: await glowOf('/s?k=wireless+mouse'),
-  pdp:  await glowOf('/dp/B005EJH6Z4'),
-  cart: await glowOf('/gp/cart/view.html')
-}, null, 1)
-```
-
-У меня все четыре вернули `Deliver to Israel` — то есть на сервере состояние консистентно. Отсюда гипотеза про кэшированный фрагмент шапки, а не про испорченное состояние сессии.
-
-### Сопутствующее, легко воспроизводится
-
-Откройте `https://www.amazon.com/dp/B005EJH6Z4` при не-US локации. Кнопки Add to Cart **нет вообще**:
-
-```js
-JSON.stringify({
-  addToCartExists: !!document.querySelector('#add-to-cart-button'),
-  message: document.querySelector('#outOfStock, #availability')?.innerText?.replace(/\s+/g,' ').slice(0,140)
-}, null, 1)
-```
-
-Ожидается `addToCartExists: false` и текст «This item cannot be shipped to your selected delivery location». Само по себе это корректное поведение — важно оно тем, что объясняет BUG-002.
 
 ---
 

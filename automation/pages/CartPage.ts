@@ -1,17 +1,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
 
-/**
- * Shopping cart.
- *
- * Verified stable hooks:
- *  - #sc-active-cart                      active-cart container
- *  - .sc-list-item[data-asin]             cart line, carries data-price
- *  - #sc-subtotal-amount-activecart       subtotal
- *  - #sc-subtotal-label-activecart        "Subtotal (N items):"
- *  - #sc-buy-box-ptc-button               Proceed to checkout
- *  - [data-action="delete"]               per-line delete control
- */
+/** Shopping cart. Locators checked against the live DOM. */
 export class CartPage extends BasePage {
   readonly activeCart: Locator;
   readonly cartItems: Locator;
@@ -25,10 +15,8 @@ export class CartPage extends BasePage {
     this.cartItems = page.locator('#sc-active-cart .sc-list-item[data-asin]');
     this.subtotal = page.locator('#sc-subtotal-amount-activecart');
     this.subtotalLabel = page.locator('#sc-subtotal-label-activecart');
-    this.proceedToCheckoutButton = page
-      .getByRole('button', { name: /proceed to checkout/i })
-      .or(page.locator('#sc-buy-box-ptc-button'))
-      .first();
+    // ID only: a role query would also match the hidden shortcut menu (see PDP note).
+    this.proceedToCheckoutButton = page.locator('#sc-buy-box-ptc-button');
   }
 
   async openCart(): Promise<void> {
@@ -42,6 +30,15 @@ export class CartPage extends BasePage {
 
   async expectItemInCart(asin: string): Promise<void> {
     await expect(this.itemByAsin(asin)).toBeVisible();
+  }
+
+  // ASIN of the first cart line. For variant products this is the child ASIN,
+  // not the parent ASIN from the search card.
+  async firstItemAsin(): Promise<string> {
+    await expect(this.cartItems.first()).toBeVisible();
+    const asin = await this.cartItems.first().getAttribute('data-asin');
+    if (!asin) throw new Error('cart line has no data-asin');
+    return asin;
   }
 
   /** Quantity shown for a line — supports both stepper and dropdown UIs. */
@@ -69,11 +66,7 @@ export class CartPage extends BasePage {
     return value;
   }
 
-  /**
-   * Click Proceed to checkout as a guest and assert the auth gate:
-   * URL moves to /ap/signin (or /checkout sign-in variant) and the
-   * email/phone field is shown. Never proceeds past authentication.
-   */
+  /** Guest checkout: click PTC and assert the sign-in gate. Never goes past auth. */
   async proceedToCheckoutExpectingAuthRedirect(): Promise<void> {
     await expect(this.proceedToCheckoutButton).toBeEnabled();
     await this.proceedToCheckoutButton.click();

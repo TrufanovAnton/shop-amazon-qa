@@ -1,11 +1,11 @@
-# ShopTest Automation — Playwright + TypeScript (POM)
+# ShopTest Automation. Playwright + TypeScript (POM)
 
 E2E suite for amazon.com covering the critical guest revenue path:
 Search → PDP → Add to Cart → Cart → checkout auth gate.
 
 ## Prerequisites
 
-Node.js ≥ 18 — nothing else.
+Node.js ≥ 18: nothing else.
 
 ## Setup (fresh machine)
 
@@ -46,7 +46,24 @@ tests/
 
 ## Design decisions
 
-Locators follow a strict fallback hierarchy verified against the live DOM (Aug 2026): ARIA role + accessible name first (`getByRole('searchbox', { name: /search amazon/i })`), then stable data attributes and semantic IDs (`[data-component-type="s-search-result"]`, `[data-asin]`, `#add-to-cart-button`, `#sc-buy-box-ptc-button`), never generated class chains or long XPath. All waiting is Playwright auto-waiting plus web-first assertions (`expect(locator)…`, `expect.poll`) — zero fixed sleeps. Amazon A/B-serves three different add-to-cart confirmation UIs and two cart quantity widgets; the page objects handle every variant. `workers: 1` and realistic `Accept-Language`/locale keep the anti-bot wall away; if a CAPTCHA is still served, `BasePage` fails fast with an actionable message instead of a cryptic timeout.
+Locator order: ARIA role or stable ID first, `data-component-type`/`data-asin` second, never generated class chains. All waiting is Playwright auto-waiting and web-first assertions; the one deliberate exception is noted under Known limitations. Amazon A/B-serves several add-to-cart confirmations and two cart quantity widgets, the page objects handle all of them. `workers: 1` plus realistic locale headers keep the CAPTCHA wall away; if it still appears, tests fail fast with a clear message.
+
+## API testing (Option B): considered, skipped
+
+Amazon has no public search or product API, and the internal XHR endpoints are anti-bot protected and change without notice, so tests against them would be flaky by design. The one realistic target is the autocomplete endpoint (`completion.amazon.com/api/2017/suggestions`): with Playwright's `request` fixture it would take three checks (valid prefix returns relevant suggestions, garbage prefix handled gracefully, field-level assertions). Skipped in favour of finishing one option well.
+
+## Known limitations
+
+- **Mobile project runs the search suite only.** Amazon serves a distinct
+  mobile DOM for PDP and cart (different title element, different buy box),
+  so the guest-checkout page objects are desktop-scoped. Adapting them is
+  straightforward follow-up work (mobile locator variants in the same POM).
+- **One fixed 300 ms debounce** exists in `selectFirstAvailableVariants()`
+  (twister re-render between swatch clicks); all other waiting is
+  auto-waiting / web-first assertions.
+- Runs from a non-US network: the framework sets a US delivery ZIP
+  best-effort and skips offers an anonymous session cannot buy
+  (Prime-exclusive deals, buy-box fallbacks, unshippable listings).
 
 ## Anti-bot & ethics notes
 
