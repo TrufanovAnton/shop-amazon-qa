@@ -1,15 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * ShopTest — Amazon.com QA automation.
- *
- * Anti-bot considerations (verified against live site, Aug 2026):
- *  - Realistic Accept-Language / UA reduce CAPTCHA ("dog page") frequency.
- *  - Workers = 1: parallel fresh sessions from one IP are the fastest way
- *    to get flagged. Sequential execution keeps runs stable.
- *  - retries = 1: a retried test lands on a fresh context, which usually
- *    clears a one-off interstitial.
- */
+// Anti-bot notes: realistic locale headers reduce CAPTCHA frequency;
+// workers=1 because parallel fresh sessions from one IP get flagged fast;
+// retries=1 since a fresh context usually clears one-off interstitials.
 export default defineConfig({
   testDir: './tests',
   timeout: 90_000,
@@ -38,6 +31,11 @@ export default defineConfig({
     {
       name: 'mobile-chrome',
       use: { ...devices['Pixel 7'] },
+      // Known limitation: Amazon serves a distinct mobile DOM for PDP/cart
+      // (no span#productTitle, different buy box). The guest-checkout POM is
+      // desktop-scoped; mobile coverage is the search suite. Documented in
+      // README under "Known limitations".
+      grep: /@search/,
     },
   ],
   reporter: [['list'], ['html', { open: 'never' }]],

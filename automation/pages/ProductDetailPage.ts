@@ -1,16 +1,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
 
-/**
- * Product Detail Page (PDP).
- *
- * Verified stable hooks:
- *  - #productTitle, #landingImage, #availability
- *  - #add-to-cart-button (INPUT, accessible name "Add to Cart")
- *  - #buy-now-button
- *  - #quantity                       quantity <select> (desktop buy box)
- *  - [id^="inline-twister-row-"]     variant dimension rows (color_name, style_name…)
- */
+/** Product detail page. Locators checked against the live DOM. */
 export class ProductDetailPage extends BasePage {
   readonly title: Locator;
   readonly price: Locator;
@@ -22,14 +13,14 @@ export class ProductDetailPage extends BasePage {
 
   constructor(page: Page) {
     super(page);
-    this.title = page.locator('#productTitle');
+    // The PDP also has a hidden <input id="productTitle"> (duplicate id), hence the span.
+    this.title = page.locator('span#productTitle');
     this.price = page.locator('#corePriceDisplay_desktop_feature_div .a-price .a-offscreen, #corePrice_feature_div .a-price .a-offscreen').first();
     this.mainImage = page.locator('#landingImage');
     this.availability = page.locator('#availability');
-    this.addToCartButton = page
-      .getByRole('button', { name: /add to cart/i })
-      .or(page.locator('#add-to-cart-button'))
-      .first();
+    // input-scoped: a hidden shortcut-menu <button> in the header shares the
+    // same accessible name and wins any role query (DOM order).
+    this.addToCartButton = page.locator('input#add-to-cart-button');
     this.buyNowButton = page.locator('#buy-now-button');
     this.quantitySelect = page.locator('#quantity');
   }
@@ -59,12 +50,35 @@ export class ProductDetailPage extends BasePage {
     }
   }
 
-  /**
-   * Add to cart and confirm via any of the three confirmation UIs Amazon
-   * A/B-serves (side sheet, EWC panel, dedicated confirmation page).
-   */
+  // Purchasable = the real Add to Cart is visible. Hidden cases seen live:
+  // Prime-exclusive deals, variant-selection fallback, unshippable listings.
+  async isPurchasable(): Promise<boolean> {
+    if (await this.addToCartButton.isVisible().catch(() => false)) return true;
+    await this.selectFirstAvailableVariants(); // bbf: try resolving dims once
+    return this.addToCartButton.isVisible().catch(() => false);
+  }
+
+  // Fallback buy box hides Add to Cart until every variant dimension is picked.
+  private async selectFirstAvailableVariants(): Promise<void> {
+    const rows = this.page.locator('[id^="inline-twister-row-"]');
+    const count = await rows.count();
+    for (let i = 0; i < count; i++) {
+      const swatch = rows
+        .nth(i)
+        .locator('li:not([class*="unavailable"])')
+        .first();
+      if (await swatch.isVisible().catch(() => false)) {
+        await swatch.click().catch(() => {});
+        await this.page.waitForTimeout(300); // twister re-render debounce
+      }
+    }
+  }
+
   async addToCart(): Promise<void> {
-    await expect(this.addToCartButton).toBeEnabled();
+    if (!(await this.addToCartButton.isVisible().catch(() => false))) {
+      await this.selectFirstAvailableVariants();
+    }
+    await expect(this.addToCartButton).toBeVisible();
     await this.addToCartButton.click();
     await this.dismissInterstitials(); // occasional warranty/coverage upsell
     const noThanks = this.page.getByRole('button', { name: /no thanks/i });

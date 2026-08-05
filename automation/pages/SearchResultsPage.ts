@@ -1,16 +1,7 @@
 import { Page, Locator, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
 
-/**
- * Search box + results list (SERP).
- *
- * Verified stable hooks:
- *  - #twotabsearchtextbox           role=searchbox, aria-label "Search Amazon"
- *  - #nav-search-submit-button      submit
- *  - [data-component-type="s-search-result"] result card, carries [data-asin]
- *  - h2 inside card                 product title
- *  - [data-cy="price-recipe"] .a-price .a-offscreen   readable price text
- */
+/** Search box and results list. Locators checked against the live DOM. */
 export class SearchResultsPage extends BasePage {
   readonly searchBox: Locator;
   readonly searchSubmit: Locator;
@@ -47,14 +38,14 @@ export class SearchResultsPage extends BasePage {
     return asin;
   }
 
-  /**
-   * Open the first result whose title matches `pattern`.
-   * Navigates by ASIN deep-link — immune to sponsored-tile overlay issues.
-   */
+  /** Open the first result matching `pattern`, navigating by ASIN deep link. */
   async openFirstMatchingResult(pattern: RegExp): Promise<string> {
-    const card = this.resultCards
-      .filter({ has: this.page.locator('h2', { hasText: pattern }) })
-      .first();
+    const matching = this.resultCards.filter({
+      has: this.page.locator('h2', { hasText: pattern }),
+    });
+    // Prefer cards with a visible price: price-less ones lead to degraded PDPs.
+    const priced = matching.filter({ has: this.page.locator('.a-price .a-offscreen') });
+    const card = ((await priced.count()) > 0 ? priced : matching).first();
     await expect(card, `no search result matching ${pattern}`).toBeVisible();
     const asin = await card.getAttribute('data-asin');
     if (!asin) throw new Error('Matched card has no data-asin');
@@ -62,10 +53,37 @@ export class SearchResultsPage extends BasePage {
     return asin;
   }
 
+  // First `limit` matching cards that show a price. The caller still checks
+  // purchasability on the PDP (priced cards can be Prime-exclusive deals).
+  async matchingPricedAsins(pattern: RegExp, limit = 5): Promise<string[]> {
+    await expect(this.resultCards.first()).toBeVisible();
+    const matching = this.resultCards
+      .filter({ has: this.page.locator('h2', { hasText: pattern }) })
+      .filter({ has: this.page.locator('.a-price .a-offscreen') });
+    const n = Math.min(await matching.count(), limit);
+    const asins: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const asin = await matching.nth(i).getAttribute('data-asin');
+      if (asin) asins.push(asin);
+    }
+    return asins;
+  }
+
   /** At least `min` result cards rendered and each has a non-empty title. */
   async expectRelevantResults(pattern: RegExp, min = 1): Promise<void> {
     await expect(this.resultCards.first()).toBeVisible();
-    expect(await this.resultCards.count()).toBeGreaterThanOrEqual(min);
+    // Mobile SERP lazy-loads cards on scroll: only 1-3 render in the initial
+    // viewport. Nudge the page down until enough cards accumulate.
+    await expect
+      .poll(
+        async () => {
+          const n = await this.resultCards.count();
+          if (n < min) await this.page.mouse.wheel(0, 1500);
+          return n;
+        },
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThanOrEqual(min);
     await expect(
       this.resultCards.filter({ has: this.page.locator('h2', { hasText: pattern }) }).first(),
       `expected at least one result title to match ${pattern}`,
